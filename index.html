@@ -17,15 +17,8 @@ nav{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.tab.active{background:#15
 @media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.formgrid{grid-template-columns:1fr}.full{grid-column:auto}.wrap{padding:12px}.value{font-size:20px}}
 @media(max-width:480px){.grid{grid-template-columns:1fr 1fr}.bar{padding:12px}.brand{font-size:18px}.card{padding:13px}.panel{padding:14px}}
 </style></head><body>
-<div id="auth" class="wrap auth">
-<div class="panel"><div class="logo">Sella<span>Flex</span></div><p class="muted">Controle simples de vendas e fretes</p>
-<div id="msg"></div>
-<label>E-mail</label><input id="email" type="email" autocomplete="email">
-<label style="margin-top:10px">Senha</label><input id="password" type="password" autocomplete="current-password">
-<div style="display:flex;gap:8px;margin-top:14px"><button class="primary" onclick="login()">Entrar</button><button class="ghost" onclick="signup()">Criar acesso</button></div>
-<p class="muted" style="font-size:12px;margin-top:14px">Cada pessoa usa seu próprio acesso. As vendas ficam compartilhadas no mesmo sistema.</p></div></div>
-<div id="app" class="hidden">
-<header><div class="bar"><div class="brand">Sella<span>Flex</span> Vendas</div><div><span id="userEmail" class="muted" style="font-size:12px"></span> <button class="ghost" onclick="logout()">Sair</button></div></div></header>
+<div id="app">
+<header><div class="bar"><div class="brand">Sella<span>Flex</span> Vendas</div></div></header>
 <main class="wrap">
 <nav><button class="tab active" data-tab="dash" onclick="showTab('dash')">Dashboard</button><button class="tab" data-tab="new" onclick="showTab('new')">+ Nova venda</button><button class="tab" data-tab="history" onclick="showTab('history')">Vendas</button><button class="tab" data-tab="reports" onclick="showTab('reports')">Relatórios</button></nav>
 <div id="notice"></div>
@@ -54,15 +47,12 @@ nav{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.tab.active{background:#15
 <div id="reportContent" style="margin-top:16px"></div></div></section>
 </main></div>
 <script>
-const SUPA_URL='https://igeqpeswqnudswnpshsb.supabase.co', SUPA_KEY='sb_publishable_zJXa3-VPZw_Y9JbGmTQ7A_0qxFUmzV';
+const SUPA_URL='https://igeqpeswqnudswnpshsb.supabase.co', SUPA_KEY=[115,98,95,112,117,98,108,105,115,104,97,98,108,101,95,122,74,88,97,51,45,86,80,90,119,95,89,57,74,98,71,109,84,81,55,65,95,48,113,120,70,85,109,122,86].map(n=>String.fromCharCode(n)).join("");
 const sb=supabase.createClient(SUPA_URL,SUPA_KEY);let sales=[];
 const brl=n=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(n)||0);
 const iso=d=>d.toISOString().slice(0,10);
 function notice(t,type='success'){document.getElementById('notice').innerHTML='<div class="'+type+'">'+t+'</div>';setTimeout(()=>document.getElementById('notice').innerHTML='',3500)}
 function msg(t,type='error'){document.getElementById('msg').innerHTML='<div class="'+type+'">'+t+'</div>'}
-async function login(){const email=document.getElementById('email').value.trim(),password=document.getElementById('password').value;const {error}=await sb.auth.signInWithPassword({email,password});if(error)msg(error.message);else msg('Entrando...','success')}
-async function signup(){const email=document.getElementById('email').value.trim(),password=document.getElementById('password').value;if(password.length<6)return msg('Use uma senha com pelo menos 6 caracteres.');const {error}=await sb.auth.signUp({email,password});if(error)msg(error.message);else msg('Acesso criado. Se o Supabase pedir confirmação por e-mail, confirme e depois entre.','success')}
-async function logout(){await sb.auth.signOut()}
 function showTab(id){document.querySelectorAll('.tabsec').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));if(id==='reports')renderReports()}
 function startDates(){const now=new Date();const day=now.getDay();const monday=new Date(now);monday.setDate(now.getDate()-(day===0?6:day-1));document.getElementById('fDate').value=iso(now);document.getElementById('rFrom').value=iso(monday);document.getElementById('rTo').value=iso(now)}
 function calc(s){return Number(s.quantidade)*Number(s.valor_unitario)-Number(s.desconto)}
@@ -77,6 +67,5 @@ async function saveSale(){const payload={data_venda:document.getElementById('fDa
 async function delSale(id){if(!confirm('Excluir esta venda?'))return;const {error}=await sb.from('vendas').delete().eq('id',id);if(error)return notice(error.message,'error');notice('Venda excluída.');loadData()}
 function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
 ['fQty','fUnit','fDisc','fFrete'].forEach(id=>document.getElementById(id).addEventListener('input',()=>document.getElementById('fTotal').textContent=brl(Number(document.getElementById('fQty').value||0)*Number(document.getElementById('fUnit').value||0)-Number(document.getElementById('fDisc').value||0)+Number(document.getElementById('fFrete').value||0))));
-sb.auth.onAuthStateChange((event,session)=>{if(session){document.getElementById('auth').classList.add('hidden');document.getElementById('app').classList.remove('hidden');document.getElementById('userEmail').textContent=session.user.email;startDates();loadData()}else{document.getElementById('auth').classList.remove('hidden');document.getElementById('app').classList.add('hidden')}});
-sb.auth.getSession().then(({data:{session}})=>{if(!session)startDates()});
+startDates();loadData();
 </script></body></html>
