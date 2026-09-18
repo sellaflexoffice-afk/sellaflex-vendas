@@ -47,7 +47,7 @@ nav{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.tab.active{background:#15
 <div id="reportContent" style="margin-top:16px"></div></div></section>
 </main></div>
 <script>
-const SUPA_URL='https://igeqpeswqnudswnpshsb.supabase.co', SUPA_KEY=[115,98,95,112,117,98,108,105,115,104,97,98,108,101,95,122,74,88,97,51,45,86,80,90,119,95,89,57,74,98,71,109,84,81,55,65,95,48,113,120,70,85,109,122,86].map(n=>String.fromCharCode(n)).join("");
+const SUPA_URL='https://igeqpeswqnudswnpshsb.supabase.co', SUPA_KEY='sb_publishable_zJXa_3-VPZw_Y9JbGmTQ7A_0qxFUmzV';
 const sb=supabase.createClient(SUPA_URL,SUPA_KEY);let sales=[];
 const brl=n=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(n)||0);
 const iso=d=>d.toISOString().slice(0,10);
