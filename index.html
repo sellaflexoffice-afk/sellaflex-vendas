@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="pt-BR"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SellaFlex Vendas</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+:root{font-family:Inter,system-ui,-apple-system,Segoe UI,Arial,sans-serif;color:#18212b;background:#f5f7fa;--blue:#1597d3}
+*{box-sizing:border-box}body{margin:0}.wrap{max-width:1180px;margin:auto;padding:18px}
+header{background:#fff;border-bottom:1px solid #e5e9ef;position:sticky;top:0;z-index:5}.bar{max-width:1180px;margin:auto;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;gap:12px}.brand{font-size:21px;font-weight:800}.brand span{color:var(--blue)}
+button{border:0;border-radius:10px;padding:11px 15px;font-weight:700;cursor:pointer}.primary{background:#1597d3;color:white}.ghost{background:#eef3f7;color:#24313d}.danger{background:#fff0f0;color:#b42318}
+nav{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.tab.active{background:#1597d3;color:#fff}
+.panel{background:#fff;border:1px solid #e4e9ef;border-radius:16px;padding:18px;margin-bottom:16px}.grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}.card{background:#fff;border:1px solid #e4e9ef;border-radius:14px;padding:16px}.label{font-size:12px;color:#667085}.value{font-size:24px;font-weight:800;margin-top:6px}
+.formgrid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}label{font-size:13px;font-weight:700;display:block;margin-bottom:5px}input,select{width:100%;padding:12px;border:1px solid #ccd5df;border-radius:10px;background:#fff;font:inherit}
+.full{grid-column:1/-1}.total{font-size:22px;font-weight:800;padding:12px 0}.row{display:flex;align-items:center;justify-content:space-between;gap:10px}.tablewrap{overflow:auto}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:11px 8px;border-bottom:1px solid #edf0f3;white-space:nowrap}th{font-size:12px;color:#667085}
+.hidden{display:none}.muted{color:#667085}.error{background:#fff0f0;color:#b42318;padding:10px;border-radius:10px;margin-bottom:12px}.success{background:#ecfdf3;color:#027a48;padding:10px;border-radius:10px;margin-bottom:12px}
+.auth{max-width:430px;margin:9vh auto}.logo{font-size:30px;font-weight:900;margin-bottom:6px}
+@media(max-width:800px){.grid{grid-template-columns:repeat(2,1fr)}.formgrid{grid-template-columns:1fr}.full{grid-column:auto}.wrap{padding:12px}.value{font-size:20px}}
+@media(max-width:480px){.grid{grid-template-columns:1fr 1fr}.bar{padding:12px}.brand{font-size:18px}.card{padding:13px}.panel{padding:14px}}
+</style></head><body>
+<div id="auth" class="wrap auth">
+<div class="panel"><div class="logo">Sella<span>Flex</span></div><p class="muted">Controle simples de vendas e fretes</p>
+<div id="msg"></div>
+<label>E-mail</label><input id="email" type="email" autocomplete="email">
+<label style="margin-top:10px">Senha</label><input id="password" type="password" autocomplete="current-password">
+<div style="display:flex;gap:8px;margin-top:14px"><button class="primary" onclick="login()">Entrar</button><button class="ghost" onclick="signup()">Criar acesso</button></div>
+<p class="muted" style="font-size:12px;margin-top:14px">Cada pessoa usa seu próprio acesso. As vendas ficam compartilhadas no mesmo sistema.</p></div></div>
+<div id="app" class="hidden">
+<header><div class="bar"><div class="brand">Sella<span>Flex</span> Vendas</div><div><span id="userEmail" class="muted" style="font-size:12px"></span> <button class="ghost" onclick="logout()">Sair</button></div></div></header>
+<main class="wrap">
+<nav><button class="tab active" data-tab="dash" onclick="showTab('dash')">Dashboard</button><button class="tab" data-tab="new" onclick="showTab('new')">+ Nova venda</button><button class="tab" data-tab="history" onclick="showTab('history')">Vendas</button><button class="tab" data-tab="reports" onclick="showTab('reports')">Relatórios</button></nav>
+<div id="notice"></div>
+<section id="dash" class="tabsec">
+<div class="grid">
+<div class="card"><div class="label">Vendas da semana</div><div id="wSales" class="value">R$ 0,00</div></div>
+<div class="card"><div class="label">Vendas do mês</div><div id="mSales" class="value">R$ 0,00</div></div>
+<div class="card"><div class="label">Frete da semana</div><div id="wFrete" class="value">R$ 0,00</div></div>
+<div class="card"><div class="label">Frete do mês</div><div id="mFrete" class="value">R$ 0,00</div></div>
+</div>
+<div class="panel" style="margin-top:16px"><div class="row"><h2 style="margin:0">Últimas vendas</h2><button class="ghost" onclick="loadData()">Atualizar</button></div><div id="latest" class="tablewrap"></div></div>
+</section>
+<section id="new" class="tabsec hidden"><div class="panel"><h2 style="margin-top:0">Nova venda</h2>
+<div class="formgrid">
+<div><label>Data</label><input id="fDate" type="date"></div><div><label>Cliente</label><input id="fClient" placeholder="Nome da empresa ou pessoa"></div>
+<div><label>Produto / serviço</label><input id="fProduct" placeholder="Ex.: Cadeira Aura, manutenção..."></div><div><label>Categoria</label><select id="fCat"><option>Produto</option><option>Manutenção</option><option>Serviço</option><option>Outro</option></select></div>
+<div><label>Quantidade</label><input id="fQty" type="number" min="0.01" step="0.01" value="1"></div><div><label>Valor unitário</label><input id="fUnit" type="number" min="0" step="0.01" value="0"></div>
+<div><label>Desconto</label><input id="fDisc" type="number" min="0" step="0.01" value="0"></div><div><label>Frete recebido</label><input id="fFrete" type="number" min="0" step="0.01" value="0"></div>
+<div><label>Forma de pagamento</label><select id="fPay"><option>Pix</option><option>Cartão</option><option>Boleto</option><option>Dinheiro</option><option>Transferência</option><option>Outro</option></select></div>
+<div><label>Observação (opcional)</label><input id="fObs" placeholder="Ex.: entrega, parcela..."></div>
+</div><div class="total">Total recebido: <span id="fTotal">R$ 0,00</span></div>
+<button class="primary" onclick="saveSale()">Salvar venda</button></div></section>
+<section id="history" class="tabsec hidden"><div class="panel"><div class="row"><h2 style="margin:0">Vendas registradas</h2><button class="ghost" onclick="loadData()">Atualizar</button></div><div id="historyTable" class="tablewrap" style="margin-top:12px"></div></div></section>
+<section id="reports" class="tabsec hidden"><div class="panel"><h2 style="margin-top:0">Relatórios</h2>
+<div class="formgrid"><div><label>De</label><input id="rFrom" type="date" onchange="renderReports()"></div><div><label>Até</label><input id="rTo" type="date" onchange="renderReports()"></div></div>
+<div id="reportContent" style="margin-top:16px"></div></div></section>
+</main></div>
+<script>
+const SUPA_URL='https://igeqpeswqnudswnpshsb.supabase.co', SUPA_KEY='sb_publishable_zJXa3-VPZw_Y9JbGmTQ7A_0qxFUmzV';
+const sb=supabase.createClient(SUPA_URL,SUPA_KEY);let sales=[];
+const brl=n=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(n)||0);
+const iso=d=>d.toISOString().slice(0,10);
+function notice(t,type='success'){document.getElementById('notice').innerHTML='<div class="'+type+'">'+t+'</div>';setTimeout(()=>document.getElementById('notice').innerHTML='',3500)}
+function msg(t,type='error'){document.getElementById('msg').innerHTML='<div class="'+type+'">'+t+'</div>'}
+async function login(){const email=document.getElementById('email').value.trim(),password=document.getElementById('password').value;const {error}=await sb.auth.signInWithPassword({email,password});if(error)msg(error.message);else msg('Entrando...','success')}
+async function signup(){const email=document.getElementById('email').value.trim(),password=document.getElementById('password').value;if(password.length<6)return msg('Use uma senha com pelo menos 6 caracteres.');const {error}=await sb.auth.signUp({email,password});if(error)msg(error.message);else msg('Acesso criado. Se o Supabase pedir confirmação por e-mail, confirme e depois entre.','success')}
+async function logout(){await sb.auth.signOut()}
+function showTab(id){document.querySelectorAll('.tabsec').forEach(x=>x.classList.add('hidden'));document.getElementById(id).classList.remove('hidden');document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));if(id==='reports')renderReports()}
+function startDates(){const now=new Date();const day=now.getDay();const monday=new Date(now);monday.setDate(now.getDate()-(day===0?6:day-1));document.getElementById('fDate').value=iso(now);document.getElementById('rFrom').value=iso(monday);document.getElementById('rTo').value=iso(now)}
+function calc(s){return Number(s.quantidade)*Number(s.valor_unitario)-Number(s.desconto)}
+async function loadData(){const {data,error}=await sb.from('vendas').select('*').order('data_venda',{ascending:false}).order('criado_em',{ascending:false});if(error)return notice(error.message,'error');sales=data||[];renderDash();renderHistory();renderReports()}
+function rangeSum(from,to){return sales.filter(s=>s.data_venda>=from&&s.data_venda<=to).reduce((a,s)=>a+calc(s),0)}
+function freightSum(from,to){return sales.filter(s=>s.data_venda>=from&&s.data_venda<=to).reduce((a,s)=>a+Number(s.frete||0),0)}
+function renderDash(){const now=new Date(),today=iso(now),day=now.getDay(),mon=new Date(now);mon.setDate(now.getDate()-(day===0?6:day-1));const first=new Date(now.getFullYear(),now.getMonth(),1);document.getElementById('wSales').textContent=brl(rangeSum(iso(mon),today));document.getElementById('mSales').textContent=brl(rangeSum(iso(first),today));document.getElementById('wFrete').textContent=brl(freightSum(iso(mon),today));document.getElementById('mFrete').textContent=brl(freightSum(iso(first),today));document.getElementById('latest').innerHTML=table(sales.slice(0,10),false)}
+function table(rows,actions=true){if(!rows.length)return '<p class="muted">Nenhuma venda registrada.</p>';return '<table><thead><tr><th>Data</th><th>Cliente</th><th>Produto/serviço</th><th>Qtd.</th><th>Venda</th><th>Frete</th><th>Total</th>'+(actions?'<th></th>':'')+'</tr></thead><tbody>'+rows.map(s=>'<tr><td>'+new Date(s.data_venda+'T12:00:00').toLocaleDateString('pt-BR')+'</td><td>'+esc(s.cliente)+'</td><td>'+esc(s.produto)+'</td><td>'+s.quantidade+'</td><td>'+brl(calc(s))+'</td><td>'+brl(s.frete)+'</td><td><b>'+brl(calc(s)+Number(s.frete||0))+'</b></td>'+(actions?'<td><button class="danger" onclick="delSale('+s.id+')">Excluir</button></td>':'')+'</tr>').join('')+'</tbody></table>'}
+function renderHistory(){document.getElementById('historyTable').innerHTML=table(sales,true)}
+function renderReports(){const f=document.getElementById('rFrom').value,t=document.getElementById('rTo').value;if(!f||!t)return;const rows=sales.filter(s=>s.data_venda>=f&&s.data_venda<=t);const venda=rows.reduce((a,s)=>a+calc(s),0),frete=rows.reduce((a,s)=>a+Number(s.frete||0),0),total=venda+frete;const map={};rows.forEach(s=>{map[s.produto]=(map[s.produto]||0)+Number(s.quantidade)});const rank=Object.entries(map).sort((a,b)=>b[1]-a[1]);document.getElementById('reportContent').innerHTML='<div class="grid"><div class="card"><div class="label">Vendas</div><div class="value">'+brl(venda)+'</div></div><div class="card"><div class="label">Fretes</div><div class="value">'+brl(frete)+'</div></div><div class="card"><div class="label">Total recebido</div><div class="value">'+brl(total)+'</div></div><div class="card"><div class="label">Lançamentos</div><div class="value">'+rows.length+'</div></div></div><div class="panel" style="margin-top:14px"><h3>Ranking de produtos/serviços por quantidade</h3>'+(rank.length?'<table><thead><tr><th>Posição</th><th>Produto/serviço</th><th>Quantidade</th></tr></thead><tbody>'+rank.map((x,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(x[0])+'</td><td>'+x[1]+'</td></tr>').join('')+'</tbody></table>':'<p class="muted">Sem vendas no período.</p>')+'</div><div class="panel"><h3>Vendas do período</h3>'+table(rows,false)+'</div>'}
+async function saveSale(){const payload={data_venda:document.getElementById('fDate').value,cliente:document.getElementById('fClient').value.trim(),produto:document.getElementById('fProduct').value.trim(),categoria:document.getElementById('fCat').value,quantidade:Number(document.getElementById('fQty').value),valor_unitario:Number(document.getElementById('fUnit').value),desconto:Number(document.getElementById('fDisc').value||0),frete:Number(document.getElementById('fFrete').value||0),forma_pagamento:document.getElementById('fPay').value,observacoes:document.getElementById('fObs').value.trim()};if(!payload.data_venda||!payload.cliente||!payload.produto||payload.quantidade<=0||payload.valor_unitario<0)return notice('Preencha data, cliente, produto, quantidade e valor.','error');const {error}=await sb.from('vendas').insert(payload);if(error)return notice(error.message,'error');document.getElementById('fClient').value='';document.getElementById('fProduct').value='';document.getElementById('fQty').value=1;document.getElementById('fUnit').value=0;document.getElementById('fDisc').value=0;document.getElementById('fFrete').value=0;document.getElementById('fObs').value='';notice('Venda salva com sucesso.');await loadData();showTab('dash')}
+async function delSale(id){if(!confirm('Excluir esta venda?'))return;const {error}=await sb.from('vendas').delete().eq('id',id);if(error)return notice(error.message,'error');notice('Venda excluída.');loadData()}
+function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+['fQty','fUnit','fDisc','fFrete'].forEach(id=>document.getElementById(id).addEventListener('input',()=>document.getElementById('fTotal').textContent=brl(Number(document.getElementById('fQty').value||0)*Number(document.getElementById('fUnit').value||0)-Number(document.getElementById('fDisc').value||0)+Number(document.getElementById('fFrete').value||0))));
+sb.auth.onAuthStateChange((event,session)=>{if(session){document.getElementById('auth').classList.add('hidden');document.getElementById('app').classList.remove('hidden');document.getElementById('userEmail').textContent=session.user.email;startDates();loadData()}else{document.getElementById('auth').classList.remove('hidden');document.getElementById('app').classList.add('hidden')}});
+sb.auth.getSession().then(({data:{session}})=>{if(!session)startDates()});
+</script></body></html>
