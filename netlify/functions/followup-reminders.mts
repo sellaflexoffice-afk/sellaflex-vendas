@@ -10,11 +10,9 @@ export default async () => {
     return;
   }
 
-  const today = new Date().toLocaleDateString("en-CA", {
-    timeZone: "America/Recife"
-  });
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Recife" });
 
-  const query = new URLSearchParams({
+  const prospectQuery = new URLSearchParams({
     select: "*",
     status: "in.(Orçamento enviado,Aguardando retorno,Em negociação)",
     proximo_contato: `lte.${today}`,
@@ -22,36 +20,42 @@ export default async () => {
     order: "proximo_contato.asc"
   });
 
-  const response = await fetch(
-    `${supabaseUrl}/rest/v1/clientes_potenciais?${query.toString()}`,
-    {
+  const paymentQuery = new URLSearchParams({
+    select: "*",
+    status_pagamento: "eq.A receber",
+    data_vencimento: `lt.${today}`,
+    or: `(ultimo_aviso_pagamento.is.null,ultimo_aviso_pagamento.lt.${today})`,
+    order: "data_vencimento.asc"
+  });
+
+  const fetchTable = async (table, query) => {
+    const response = await fetch(`${supabaseUrl}/rest/v1/${table}?${query.toString()}`, {
       headers: {
         apikey: supabaseKey,
         Authorization: `Bearer ${supabaseKey}`
       }
+    });
+    if (!response.ok) {
+      console.error(`Supabase query failed for ${table}`, response.status, await response.text());
+      return [];
     }
-  );
+    return response.json();
+  };
 
-  if (!response.ok) {
-    console.error("Supabase query failed", response.status, await response.text());
-    return;
-  }
+  const [clients, payments] = await Promise.all([
+    fetchTable("clientes_potenciais", prospectQuery),
+    fetchTable("vendas", paymentQuery)
+  ]);
 
-  const clients = await response.json();
-  if (!clients.length) return;
+  if (!clients.length && !payments.length) return;
 
   const formatBRL = (value) =>
-    new Intl.NumberFormat("pt-BR", {
-      style: "currency",
-      currency: "BRL"
-    }).format(Number(value) || 0);
+    new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(Number(value) || 0);
 
   const formatDate = (value) =>
-    value
-      ? new Date(value + "T12:00:00").toLocaleDateString("pt-BR")
-      : "Sem data";
+    value ? new Date(value + "T12:00:00").toLocaleDateString("pt-BR") : "-";
 
-  const rows = clients.map((client) => {
+  const clientRows = clients.map((client) => {
     const overdue = client.proximo_contato < today;
     return `
       <tr>
@@ -64,41 +68,60 @@ export default async () => {
     `;
   }).join("");
 
-  const total = clients.reduce(
-    (sum, client) => sum + (Number(client.valor_orcamento) || 0),
-    0
-  );
+  const paymentRows = payments.map((sale) => `
+    <tr>
+      <td style="padding:10px;border-bottom:1px solid #eee"><strong>${escapeHtml(sale.cliente)}</strong></td>
+      <td style="padding:10px;border-bottom:1px solid #eee">${formatBRL(Number(sale.quantidade) * Number(sale.valor_unitario) - Number(sale.desconto || 0) + Number(sale.frete || 0))}</td>
+      <td style="padding:10px;border-bottom:1px solid #eee">${formatDate(sale.data_vencimento)}</td>
+      <td style="padding:10px;border-bottom:1px solid #eee">${escapeHtml(sale.produto)}</td>
+    </tr>
+  `).join("");
+
+  const opportunityTotal = clients.reduce((sum, client) => sum + (Number(client.valor_orcamento) || 0), 0);
+  const receivableTotal = payments.reduce((sum, sale) =>
+    sum + (Number(sale.quantidade) * Number(sale.valor_unitario) - Number(sale.desconto || 0) + Number(sale.frete || 0)), 0);
+
+  const clientSection = clients.length ? `
+    <h3 style="margin:24px 0 10px">🔔 Clientes em potencial</h3>
+    <p style="color:#667085">Há ${clients.length} follow-up(s) para fazer.</p>
+    <div style="background:#f5f7fa;border-radius:12px;padding:12px;margin-bottom:12px">
+      Oportunidades em acompanhamento: <strong>${formatBRL(opportunityTotal)}</strong>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead><tr style="text-align:left;background:#f5f7fa">
+        <th style="padding:10px">Cliente</th><th style="padding:10px">Orçamento</th><th style="padding:10px">Follow-up</th><th style="padding:10px">Situação</th><th style="padding:10px">Status</th>
+      </tr></thead>
+      <tbody>${clientRows}</tbody>
+    </table>
+  ` : "";
+
+  const paymentSection = payments.length ? `
+    <h3 style="margin:28px 0 10px">💰 Pagamentos atrasados</h3>
+    <p style="color:#b42318"><strong>Hora de cobrar estes clientes.</strong></p>
+    <div style="background:#fff0f0;border-radius:12px;padding:12px;margin-bottom:12px">
+      Total em atraso: <strong>${formatBRL(receivableTotal)}</strong>
+    </div>
+    <table style="width:100%;border-collapse:collapse;font-size:14px">
+      <thead><tr style="text-align:left;background:#fff0f0">
+        <th style="padding:10px">Cliente</th><th style="padding:10px">Valor</th><th style="padding:10px">Vencimento</th><th style="padding:10px">Venda</th>
+      </tr></thead>
+      <tbody>${paymentRows}</tbody>
+    </table>
+  ` : "";
 
   const html = `
     <div style="font-family:Arial,sans-serif;max-width:760px;margin:auto;color:#18212b">
-      <div style="padding:20px 0">
-        <h2 style="margin:0 0 6px">🔔 Follow-ups da SellaFlex</h2>
-        <p style="margin:0;color:#667085">Há ${clients.length} cliente(s) que precisam de acompanhamento.</p>
-      </div>
-      <div style="background:#f5f7fa;border-radius:12px;padding:14px;margin-bottom:18px">
-        <strong>Oportunidades em acompanhamento:</strong> ${formatBRL(total)}
-      </div>
-      <table style="width:100%;border-collapse:collapse;font-size:14px">
-        <thead>
-          <tr style="text-align:left;background:#f5f7fa">
-            <th style="padding:10px">Cliente</th>
-            <th style="padding:10px">Orçamento</th>
-            <th style="padding:10px">Follow-up</th>
-            <th style="padding:10px">Situação</th>
-            <th style="padding:10px">Status</th>
-          </tr>
-        </thead>
-        <tbody>${rows}</tbody>
-      </table>
-      <p style="margin-top:22px">
+      <h2 style="margin:0 0 6px">SellaFlex Vendas — lembretes</h2>
+      <p style="margin:0;color:#667085">Resumo automático do que precisa da sua atenção.</p>
+      ${clientSection}
+      ${paymentSection}
+      <p style="margin-top:24px">
         <a href="https://sellaflex-vendas.netlify.app"
            style="display:inline-block;background:#1597d3;color:white;text-decoration:none;padding:12px 16px;border-radius:9px;font-weight:bold">
           Abrir SellaFlex Vendas
         </a>
       </p>
-      <p style="font-size:12px;color:#667085;margin-top:24px">
-        Este aviso é automático e foi enviado pelo sistema SellaFlex Vendas.
-      </p>
+      <p style="font-size:12px;color:#667085">Aviso automático do sistema SellaFlex Vendas.</p>
     </div>
   `;
 
@@ -112,13 +135,12 @@ export default async () => {
     body: JSON.stringify({
       sender: { name: "SellaFlex Vendas", email: sender },
       to: [{ email: recipient, name: "SellaFlex" }],
-      subject: clients.length === 1
-        ? `🔔 Follow-up: ${clients[0].cliente}`
-        : `🔔 ${clients.length} follow-ups da SellaFlex`,
-      htmlContent: html,
-      textContent: clients
-        .map((client) => `${client.cliente} — ${formatBRL(client.valor_orcamento)} — follow-up ${formatDate(client.proximo_contato)}`)
-        .join("\n")
+      subject: clients.length && payments.length
+        ? `🔔 SellaFlex: ${clients.length} follow-up(s) e ${payments.length} pagamento(s) atrasado(s)`
+        : payments.length
+          ? `💰 SellaFlex: ${payments.length} pagamento(s) atrasado(s)`
+          : `🔔 SellaFlex: ${clients.length} follow-up(s)`,
+      htmlContent: html
     })
   });
 
@@ -128,39 +150,26 @@ export default async () => {
   }
 
   for (const client of clients) {
-    const update = await fetch(
-      `${supabaseUrl}/rest/v1/clientes_potenciais?id=eq.${client.id}`,
-      {
-        method: "PATCH",
-        headers: {
-          apikey: supabaseKey,
-          Authorization: `Bearer ${supabaseKey}`,
-          "Content-Type": "application/json",
-          Prefer: "return=minimal"
-        },
-        body: JSON.stringify({
-          ultimo_aviso_enviado: today,
-          atualizado_em: new Date().toISOString()
-        })
-      }
-    );
+    await fetch(`${supabaseUrl}/rest/v1/clientes_potenciais?id=eq.${client.id}`, {
+      method: "PATCH",
+      headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ ultimo_aviso_enviado: today })
+    });
+  }
 
-    if (!update.ok) {
-      console.error("Failed to mark reminder sent", client.id, update.status, await update.text());
-    }
+  for (const sale of payments) {
+    await fetch(`${supabaseUrl}/rest/v1/vendas?id=eq.${sale.id}`, {
+      method: "PATCH",
+      headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, "Content-Type": "application/json", Prefer: "return=minimal" },
+      body: JSON.stringify({ ultimo_aviso_pagamento: today })
+    });
   }
 };
 
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;",
-    "<": "&lt;",
-    ">": "&gt;",
-    '"': "&quot;",
-    "'": "&#39;"
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
   }[char]));
 }
 
-export const config = {
-  schedule: "0 12 * * *"
-};
+export const config = { schedule: "0 12 * * *" };
