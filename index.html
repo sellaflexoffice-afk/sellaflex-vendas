@@ -41,8 +41,10 @@ nav{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.tab.active{background:#15
 <div><label>Quantidade</label><input id="fQty" type="number" min="0.01" step="0.01" value="1"></div><div><label>Valor unitário</label><input id="fUnit" type="number" min="0" step="0.01" value="0"></div>
 <div><label>Desconto</label><input id="fDisc" type="number" min="0" step="0.01" value="0"></div><div><label>Frete recebido</label><input id="fFrete" type="number" min="0" step="0.01" value="0"></div>
 <div><label>Forma de pagamento</label><select id="fPay"><option>Pix</option><option>Cartão</option><option>Boleto</option><option>Dinheiro</option><option>Transferência</option><option>Outro</option></select></div>
+<div><label>Status do pagamento</label><select id="fPayStatus" onchange="toggleDueDate()"><option>Pago</option><option>A receber</option></select></div>
+<div id="dueWrap" class="hidden"><label>Vencimento</label><input id="fDueDate" type="date"></div>
 <div><label>Observação (opcional)</label><input id="fObs" placeholder="Ex.: entrega, parcela..."></div>
-</div><div class="total">Total da venda: <span id="fTotal">R$ 0,00</span></div><div id="paymentHint" class="muted" style="margin-bottom:12px">Pagamento marcado como recebido.</div>
+</div><div class="total">Total da venda: <span id="fTotal">R$ 0,00</span></div>
 <button class="primary" onclick="saveSale()">Salvar venda</button></div></section>
 <section id="history" class="tabsec hidden"><div class="panel"><div class="row"><h2 style="margin:0">Vendas registradas</h2><button class="ghost" onclick="loadData()">Atualizar</button></div><div id="historyTable" class="tablewrap" style="margin-top:12px"></div></div></section>
 <section id="reports" class="tabsec hidden"><div class="panel"><h2 style="margin-top:0">Relatórios</h2>
@@ -72,42 +74,359 @@ nav{display:flex;gap:8px;flex-wrap:wrap;margin:18px 0}.tab.active{background:#15
 </section>
 </main></div>
 <script>
-const SUPA_URL='https://igeqpeswqnudswnpshsb.supabase.co', SUPA_KEY='sb_publishable_zJXa_3-VPZw_Y9JbGmTQ7A_0qxFUmzV';
-const sb=supabase.createClient(SUPA_URL,SUPA_KEY);let sales=[],potentials=[];
-const brl=n=>new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(n)||0);
-const iso=d=>d.toISOString().slice(0,10);
-function notice(t,type='success'){document.getElementById('notice').innerHTML='<div class="'+type+'">'+t+'</div>';setTimeout(()=>document.getElementById('notice').innerHTML='',3500)}
-function msg(t,type='error'){const m=document.getElementById('msg');if(m)m.innerHTML='<div class="'+type+'">'+t+'</div>'}
-function showTab(id){document.querySelectorAll('.tabsec').forEach(x=>x.classList.add('hidden'));const target=document.getElementById(id);if(!target)return;target.classList.remove('hidden');document.querySelectorAll('.tab').forEach(x=>x.classList.toggle('active',x.dataset.tab===id));if(id==='reports')renderReports();if(id==='prospects')renderPotentials()}
-function addDays(date,n){const d=new Date(date);d.setDate(d.getDate()+Number(n));return d}
-function toggleDueDate(){const status=document.getElementById('fPayStatus');const due=document.getElementById('dueWrap');const hint=document.getElementById('paymentHint');if(!status||!due||!hint)return;const a=status.value==='A receber';due.classList.toggle('hidden',!a);hint.textContent=a?'O sistema vai lembrar você por e-mail se o pagamento passar do vencimento.':'Pagamento marcado como recebido.';const dueDate=document.getElementById('fDueDate');if(a&&dueDate&&!dueDate.value)dueDate.value=iso(addDays(new Date(),7))}
-function startDates(){const now=new Date();const day=now.getDay();const monday=new Date(now);monday.setDate(now.getDate()-(day===0?6:day-1));const fDate=document.getElementById('fDate'),rFrom=document.getElementById('rFrom'),rTo=document.getElementById('rTo'),pQuote=document.getElementById('pQuoteDate'),pNext=document.getElementById('pNext');if(fDate)fDate.value=iso(now);if(rFrom)rFrom.value=iso(monday);if(rTo)rTo.value=iso(now);if(pQuote)pQuote.value=iso(now);if(pNext)pNext.value=iso(addDays(now,3))}
-function calc(s){return Number(s.quantidade)*Number(s.valor_unitario)-Number(s.desconto)}
-async function loadData(){const {data,error}=await sb.from('vendas').select('*').order('data_venda',{ascending:false}).order('criado_em',{ascending:false});if(error)return notice(error.message,'error');sales=data||[];renderDash();renderHistory();renderReports();loadPotentials()}
-function rangeSum(from,to){return sales.filter(s=>s.data_venda>=from&&s.data_venda<=to).reduce((a,s)=>a+calc(s),0)}
-function freightSum(from,to){return sales.filter(s=>s.data_venda>=from&&s.data_venda<=to).reduce((a,s)=>a+Number(s.frete||0),0)}
-function renderWeeklySummary(){const box=document.getElementById('weeklySummary');if(!box)return;const now=new Date();const day=now.getDay();const monday=new Date(now.getFullYear(),now.getMonth(),now.getDate()-(day===0?6:day-1));const weeks={};const currentFrom=iso(monday);const currentSunday=new Date(monday);currentSunday.setDate(monday.getDate()+6);weeks[currentFrom]={from:currentFrom,to:iso(currentSunday),sales:0,freight:0,total:0,count:0};sales.forEach(s=>{const parts=String(s.data_venda).split('-').map(Number);if(parts.length!==3)return;const d=new Date(parts[0],parts[1]-1,parts[2]);const dow=d.getDay();const mon=new Date(parts[0],parts[1]-1,parts[2]-(dow===0?6:dow-1));const key=iso(mon);const sun=new Date(mon);sun.setDate(mon.getDate()+6);if(!weeks[key])weeks[key]={from:key,to:iso(sun),sales:0,freight:0,total:0,count:0};const venda=calc(s),frete=Number(s.frete||0);weeks[key].sales+=venda;weeks[key].freight+=frete;weeks[key].total+=venda+frete;weeks[key].count++});const rows=Object.values(weeks).sort((a,b)=>b.from.localeCompare(a.from));box.innerHTML='<table><thead><tr><th>Semana</th><th>Vendas</th><th>Fretes</th><th>Total</th><th>Lançamentos</th></tr></thead><tbody>'+rows.map(w=>'<tr'+(w.from===currentFrom?' style="font-weight:700;background:#f7fbfd"':'')+'><td><b>'+new Date(w.from+'T12:00:00').toLocaleDateString('pt-BR')+' a '+new Date(w.to+'T12:00:00').toLocaleDateString('pt-BR')+'</b>'+(w.from===currentFrom?' <span class="muted">(semana atual)</span>':'')+'</td><td>'+brl(w.sales)+'</td><td>'+brl(w.freight)+'</td><td><b>'+brl(w.total)+'</b></td><td>'+w.count+'</td></tr>').join('')+'</tbody></table>'}
-function renderDash(){const now=new Date();const todayStr=String(now.getFullYear()).padStart(4,'0')+'-'+String(now.getMonth()+1).padStart(2,'0')+'-'+String(now.getDate()).padStart(2,'0');const day=now.getDay();const monday=new Date(now.getFullYear(),now.getMonth(),now.getDate()-(day===0?6:day-1));const mondayStr=String(monday.getFullYear()).padStart(4,'0')+'-'+String(monday.getMonth()+1).padStart(2,'0')+'-'+String(monday.getDate()).padStart(2,'0');const firstStr=String(now.getFullYear()).padStart(4,'0')+'-'+String(now.getMonth()+1).padStart(2,'0')+'-01';const weekSales=sales.filter(x=>String(x.data_venda)>=mondayStr&&String(x.data_venda)<=todayStr).reduce((a,x)=>a+calc(x),0);const monthSales=sales.filter(x=>String(x.data_venda)>=firstStr&&String(x.data_venda)<=todayStr).reduce((a,x)=>a+calc(x),0);const weekFreight=sales.filter(x=>String(x.data_venda)>=mondayStr&&String(x.data_venda)<=todayStr).reduce((a,x)=>a+Number(x.frete||0),0);const monthFreight=sales.filter(x=>String(x.data_venda)>=firstStr&&String(x.data_venda)<=todayStr).reduce((a,x)=>a+Number(x.frete||0),0);document.getElementById('wSales').textContent=brl(weekSales);document.getElementById('mSales').textContent=brl(monthSales);document.getElementById('wFrete').textContent=brl(weekFreight);document.getElementById('mFrete').textContent=brl(monthFreight);document.getElementById('latest').innerHTML=table(sales.slice(0,10),false);renderPotentialSummary();renderPaymentSummary();renderWeeklySummary()}
-function table(rows,actions=true){if(!rows.length)return '<p class="muted">Nenhuma venda registrada.</p>';return '<table><thead><tr><th>Data</th><th>Cliente</th><th>Produto/serviço</th><th>Qtd.</th><th>Venda</th><th>Frete</th><th>Total</th><th>Pagamento</th>'+(actions?'<th></th>':'')+'</tr></thead><tbody>'+rows.map(s=>'<tr><td>'+new Date(s.data_venda+'T12:00:00').toLocaleDateString('pt-BR')+'</td><td>'+esc(s.cliente)+'</td><td>'+esc(s.produto)+'</td><td>'+s.quantidade+'</td><td>'+brl(calc(s))+'</td><td>'+brl(s.frete)+'</td><td><b>'+brl(calc(s)+Number(s.frete||0))+'</b></td>'+(actions?'<td><button class="danger" onclick="delSale('+s.id+')">Excluir</button></td>':'')+'</tr>').join('')+'</tbody></table>'}
-function paymentAmount(s){return calc(s)+Number(s.frete||0)}
-function renderPaymentSummary(){const today=iso(new Date());const pending=sales.filter(s=>s.status_pagamento==='A receber');const late=pending.filter(s=>s.data_vencimento&&s.data_vencimento<today);document.getElementById('toReceive').textContent=brl(pending.reduce((a,s)=>a+paymentAmount(s),0));document.getElementById('latePayments').textContent=late.length;let box=document.getElementById('paymentAlerts');if(!box){const dash=document.getElementById('dash');const panel=document.createElement('div');panel.className='panel';panel.innerHTML='<div class="row"><h2 style="margin:0">Pagamentos a receber</h2><button class="ghost" onclick="loadData()">Atualizar</button></div><div id="paymentAlerts" class="tablewrap" style="margin-top:12px"></div>';dash.insertBefore(panel,dash.querySelector('.panel'));box=panel.querySelector('#paymentAlerts')}const rows=pending.filter(s=>s.data_vencimento).sort((a,b)=>a.data_vencimento.localeCompare(b.data_vencimento));box.innerHTML=rows.length?'<table><thead><tr><th>Cliente</th><th>Valor</th><th>Vencimento</th><th>Situação</th><th></th></tr></thead><tbody>'+rows.map(s=>'<tr><td>'+esc(s.cliente)+'</td><td>'+brl(paymentAmount(s))+'</td><td>'+new Date(s.data_vencimento+'T12:00:00').toLocaleDateString('pt-BR')+'</td><td>'+paymentBadge(s)+'</td><td><button class="ghost" onclick="markPaid('+s.id+')">Marcar pago</button></td></tr>').join('')+'</tbody></table>':'<p class="muted">Nenhum pagamento pendente. 👍</p>'}
-function paymentBadge(s){const today=iso(new Date());if(s.status_pagamento!=='A receber')return 'Pago';if(s.data_vencimento&&s.data_vencimento<today)return '<b style="color:#b42318">Atrasado</b>';return '<span style="color:#9a6700">A receber</span>'}
-async function markPaid(id){const {error}=await sb.from('vendas').update({status_pagamento:'Pago',data_pagamento:iso(new Date())}).eq('id',id);if(error)return notice(error.message,'error');notice('Pagamento marcado como recebido.');await loadData()}
-async function loadPotentials(){const {data,error}=await sb.from('clientes_potenciais').select('*').order('proximo_contato',{ascending:true,nullsFirst:false}).order('criado_em',{ascending:false});if(error)return notice(error.message,'error');potentials=data||[];renderPotentialSummary();renderPotentials()}
-function openPotential(p){const phone=(p.telefone||'').replace(/\D/g,'');const wa=phone?'<a href="https://wa.me/55'+phone+'?text='+encodeURIComponent('Olá! Tudo bem? Estou entrando em contato sobre o orçamento da SellaFlex.')" target="_blank"><button class="ghost">WhatsApp</button></a>':'';const email=p.email?'<a href="mailto:'+encodeURIComponent(p.email)+'"><button class="ghost">E-mail</button></a>':'';return wa+email}
-function renderPotentialSummary(){const today=iso(new Date());const open=potentials.filter(p=>!['Fechado','Perdido'].includes(p.status));const due=potentials.filter(p=>!['Fechado','Perdido'].includes(p.status)&&p.proximo_contato===today);const late=potentials.filter(p=>!['Fechado','Perdido'].includes(p.status)&&p.proximo_contato&&p.proximo_contato<today);document.getElementById('openOppValue').textContent=brl(open.reduce((a,p)=>a+Number(p.valor_orcamento||0),0));document.getElementById('openOppCount').textContent=open.length;document.getElementById('todayFollowups').textContent=due.length;document.getElementById('lateFollowups').textContent=late.length;const rows=[...late,...due];document.getElementById('dashFollowups').innerHTML=rows.length?'<table><thead><tr><th>Cliente</th><th>Valor</th><th>Follow-up</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+rows.map(p=>'<tr><td>'+esc(p.cliente)+'</td><td>'+brl(p.valor_orcamento)+'</td><td>'+(p.proximo_contato<today?'Atrasado':'Hoje')+'</td><td>'+esc(p.status)+'</td><td>'+openPotential(p)+'</td></tr>').join('')+'</tbody></table>':'<p class="muted">Nenhum follow-up para hoje. 👍</p>'}
-function renderPotentials(){const box=document.getElementById('potentialTable');if(!box)return;if(!potentials.length){box.innerHTML='<p class="muted">Nenhum cliente em potencial cadastrado.</p>';return}const today=iso(new Date());box.innerHTML='<table><thead><tr><th>Cliente</th><th>Orçamento</th><th>Contato</th><th>Próximo follow-up</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+potentials.map(p=>{const due=!['Fechado','Perdido'].includes(p.status)&&p.proximo_contato&&p.proximo_contato<=today;return '<tr><td><b>'+esc(p.cliente)+'</b><br><span class="muted">'+esc(p.observacoes||'')+'</span></td><td>'+brl(p.valor_orcamento)+'</td><td>'+esc(p.telefone||p.email||'-')+'</td><td>'+(p.proximo_contato?new Date(p.proximo_contato+'T12:00:00').toLocaleDateString('pt-BR'):'-')+(due?' <b style="color:#b42318">• atenção</b>':'')+'</td><td><select onchange="updatePotential('+p.id+', {status:this.value})"><option '+(p.status==='Orçamento enviado'?'selected':'')+'>Orçamento enviado</option><option '+(p.status==='Aguardando retorno'?'selected':'')+'>Aguardando retorno</option><option '+(p.status==='Em negociação'?'selected':'')+'>Em negociação</option><option '+(p.status==='Fechado'?'selected':'')+'>Fechado</option><option '+(p.status==='Perdido'?'selected':'')+'>Perdido</option></select></td><td><div style="display:flex;gap:6px;flex-wrap:wrap">'+openPotential(p)+'<button class="ghost" onclick="markContacted('+p.id+')">Fiz contato</button><button class="primary" onclick="closeAsSale('+p.id+')">Fechar venda</button><button class="danger" onclick="markLost('+p.id+')">Perdido</button><button class="danger" onclick="deletePotential('+p.id+')">Excluir</button></div></td></tr>'}).join('')}</tbody></table>'}
-async function savePotential(){const payload={cliente:document.getElementById('pClient').value.trim(),valor_orcamento:Number(document.getElementById('pValue').value||0),telefone:document.getElementById('pPhone').value.trim(),email:document.getElementById('pEmail').value.trim(),data_orcamento:document.getElementById('pQuoteDate').value,status:document.getElementById('pStatus').value,proximo_contato:document.getElementById('pNext').value,intervalo_followup:Number(document.getElementById('pInterval').value),observacoes:document.getElementById('pObs').value.trim()};if(!payload.cliente||!payload.data_orcamento||!payload.proximo_contato)return notice('Preencha cliente, data do orçamento e próximo follow-up.','error');const {error}=await sb.from('clientes_potenciais').insert(payload);if(error)return notice(error.message,'error');['pClient','pPhone','pEmail','pObs'].forEach(id=>document.getElementById(id).value='');document.getElementById('pValue').value=0;document.getElementById('pStatus').value='Orçamento enviado';document.getElementById('pQuoteDate').value=iso(new Date());document.getElementById('pInterval').value=3;document.getElementById('pNext').value=iso(addDays(new Date(),3));notice('Cliente em potencial salvo.');await loadPotentials()}
-async function updatePotential(id,changes){const {error}=await sb.from('clientes_potenciais').update({...changes,atualizado_em:new Date().toISOString()}).eq('id',id);if(error)return notice(error.message,'error');await loadPotentials()}
-async function markContacted(id){const p=potentials.find(x=>x.id===id);if(!p)return;const answer=prompt('Daqui a quantos dias você quer ser lembrado novamente?',String(p.intervalo_followup||3));if(answer===null)return;const days=Math.max(1,Number(answer)||3);const today=new Date();const next=addDays(today,days);const {error}=await sb.from('clientes_potenciais').update({ultimo_contato:iso(today),proximo_contato:iso(next),intervalo_followup:days,ultimo_aviso_enviado:null,atualizado_em:new Date().toISOString()}).eq('id',id);if(error)return notice(error.message,'error');notice('Contato registrado. Novo follow-up: '+next.toLocaleDateString('pt-BR'));await loadPotentials()}
-async function markLost(id){if(!confirm('Marcar este cliente como perdido?'))return;await updatePotential(id,{status:'Perdido',proximo_contato:null})}
-async function deletePotential(id){if(!confirm('Excluir este cliente em potencial?'))return;const {error}=await sb.from('clientes_potenciais').delete().eq('id',id);if(error)return notice(error.message,'error');notice('Cliente em potencial excluído.');loadPotentials()}
-function closeAsSale(id){const p=potentials.find(x=>x.id===id);if(!p)return;document.getElementById('fClient').value=p.cliente;document.getElementById('fUnit').value=Number(p.valor_orcamento||0);document.getElementById('fQty').value=1;document.getElementById('fFrete').value=0;showTab('new');notice('Venda pré-preenchida com o cliente e o valor do orçamento.')}
-function renderHistory(){document.getElementById('historyTable').innerHTML=table(sales,true)}
-function renderReports(){const f=document.getElementById('rFrom').value,t=document.getElementById('rTo').value;if(!f||!t)return;const rows=sales.filter(s=>s.data_venda>=f&&s.data_venda<=t);const venda=rows.reduce((a,s)=>a+calc(s),0),frete=rows.reduce((a,s)=>a+Number(s.frete||0),0),total=venda+frete;const map={};rows.forEach(s=>{map[s.produto]=(map[s.produto]||0)+Number(s.quantidade)});const rank=Object.entries(map).sort((a,b)=>b[1]-a[1]);document.getElementById('reportContent').innerHTML='<div class="grid"><div class="card"><div class="label">Vendas</div><div class="value">'+brl(venda)+'</div></div><div class="card"><div class="label">Fretes</div><div class="value">'+brl(frete)+'</div></div><div class="card"><div class="label">Total recebido</div><div class="value">'+brl(total)+'</div></div><div class="card"><div class="label">Lançamentos</div><div class="value">'+rows.length+'</div></div></div><div class="panel" style="margin-top:14px"><h3>Ranking de produtos/serviços por quantidade</h3>'+(rank.length?'<table><thead><tr><th>Posição</th><th>Produto/serviço</th><th>Quantidade</th></tr></thead><tbody>'+rank.map((x,i)=>'<tr><td>'+(i+1)+'</td><td>'+esc(x[0])+'</td><td>'+x[1]+'</td></tr>').join('')+'</tbody></table>':'<p class="muted">Sem vendas no período.</p>')+'</div><div class="panel"><h3>Vendas do período</h3>'+table(rows,false)+'</div>'}
-async function saveSale(){const payStatus=document.getElementById('fPayStatus');const isPending=payStatus?payStatus.value==='A receber':false;const due=document.getElementById('fDueDate');const payload={data_venda:document.getElementById('fDate').value,cliente:document.getElementById('fClient').value.trim(),produto:document.getElementById('fProduct').value.trim(),categoria:document.getElementById('fCat').value,quantidade:Number(document.getElementById('fQty').value),valor_unitario:Number(document.getElementById('fUnit').value),desconto:Number(document.getElementById('fDisc').value||0),frete:Number(document.getElementById('fFrete').value||0),forma_pagamento:document.getElementById('fPay').value,observacoes:document.getElementById('fObs').value.trim(),status_pagamento:isPending?'A receber':'Pago',data_vencimento:isPending&&due?due.value:null,data_pagamento:isPending?null:document.getElementById('fDate').value};if(!payload.data_venda||!payload.cliente||!payload.produto||payload.quantidade<=0||payload.valor_unitario<0)return notice('Preencha data, cliente, produto, quantidade e valor.','error');if(isPending&&!payload.data_vencimento)return notice('Informe a data de vencimento.','error');const {error}=await sb.from('vendas').insert(payload);if(error)return notice(error.message,'error');document.getElementById('fClient').value='';document.getElementById('fProduct').value='';document.getElementById('fQty').value=1;document.getElementById('fUnit').value=0;document.getElementById('fDisc').value=0;document.getElementById('fFrete').value=0;document.getElementById('fObs').value='';if(payStatus){payStatus.value='Pago';toggleDueDate()}if(due)due.value='';notice(isPending?'Venda salva como pagamento a receber.':'Venda salva com sucesso.');await loadData();showTab('dash')}
-async function delSale(id){if(!confirm('Excluir esta venda?'))return;const {error}=await sb.from('vendas').delete().eq('id',id);if(error)return notice(error.message,'error');notice('Venda excluída.');loadData()}
-function esc(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
-['fQty','fUnit','fDisc','fFrete'].forEach(id=>document.getElementById(id).addEventListener('input',()=>document.getElementById('fTotal').textContent=brl(Number(document.getElementById('fQty').value||0)*Number(document.getElementById('fUnit').value||0)-Number(document.getElementById('fDisc').value||0)+Number(document.getElementById('fFrete').value||0))));
-startDates();loadData();loadPotentials();
+let sb = null;
+let sales = [];
+let potentials = [];
+
+function brl(n){
+  return new Intl.NumberFormat('pt-BR',{style:'currency',currency:'BRL'}).format(Number(n)||0);
+}
+function iso(d){
+  const x = new Date(d);
+  return x.getFullYear()+'-'+String(x.getMonth()+1).padStart(2,'0')+'-'+String(x.getDate()).padStart(2,'0');
+}
+function addDays(date,n){
+  const d = new Date(date);
+  d.setDate(d.getDate()+Number(n));
+  return d;
+}
+function esc(s){
+  return String(s == null ? '' : s).replace(/[&<>"']/g,function(m){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m];
+  });
+}
+function notice(text,type){
+  const box=document.getElementById('notice');
+  if(!box)return;
+  box.innerHTML='<div class="'+(type||'success')+'">'+esc(text)+'</div>';
+  setTimeout(function(){box.innerHTML='';},3500);
+}
+function showTab(id){
+  document.querySelectorAll('.tabsec').forEach(function(x){x.classList.add('hidden');});
+  const target=document.getElementById(id);
+  if(!target)return;
+  target.classList.remove('hidden');
+  document.querySelectorAll('.tab').forEach(function(x){x.classList.toggle('active',x.dataset.tab===id);});
+  if(id==='reports')renderReports();
+  if(id==='prospects')renderPotentials();
+}
+function startDates(){
+  const now=new Date();
+  const day=now.getDay();
+  const monday=new Date(now);
+  monday.setDate(now.getDate()-(day===0?6:day-1));
+  const ids={fDate:now,rFrom:monday,rTo:now,pQuoteDate:now,pNext:addDays(now,3)};
+  Object.keys(ids).forEach(function(id){
+    const el=document.getElementById(id);
+    if(el)el.value=iso(ids[id]);
+  });
+}
+function calc(s){
+  return Number(s.quantidade||0)*Number(s.valor_unitario||0)-Number(s.desconto||0);
+}
+function paymentAmount(s){
+  return calc(s)+Number(s.frete||0);
+}
+async function loadData(){
+  if(!sb)return;
+  const result=await sb.from('vendas').select('*').order('data_venda',{ascending:false}).order('criado_em',{ascending:false});
+  if(result.error){notice(result.error.message,'error');return;}
+  sales=result.data||[];
+  renderDash();
+  renderHistory();
+  renderReports();
+}
+async function loadPotentials(){
+  if(!sb)return;
+  const result=await sb.from('clientes_potenciais').select('*').order('proximo_contato',{ascending:true,nullsFirst:false}).order('criado_em',{ascending:false});
+  if(result.error){notice(result.error.message,'error');return;}
+  potentials=result.data||[];
+  renderPotentialSummary();
+  renderPotentials();
+}
+function renderDash(){
+  const now=new Date();
+  const today=iso(now);
+  const day=now.getDay();
+  const monday=new Date(now);
+  monday.setDate(now.getDate()-(day===0?6:day-1));
+  const m=iso(monday);
+  const first=now.getFullYear()+'-'+String(now.getMonth()+1).padStart(2,'0')+'-01';
+  const week=sales.filter(function(s){return String(s.data_venda)>=m&&String(s.data_venda)<=today;});
+  const month=sales.filter(function(s){return String(s.data_venda)>=first&&String(s.data_venda)<=today;});
+  document.getElementById('wSales').textContent=brl(week.reduce(function(a,s){return a+calc(s);},0));
+  document.getElementById('mSales').textContent=brl(month.reduce(function(a,s){return a+calc(s);},0));
+  document.getElementById('wFrete').textContent=brl(week.reduce(function(a,s){return a+Number(s.frete||0);},0));
+  document.getElementById('mFrete').textContent=brl(month.reduce(function(a,s){return a+Number(s.frete||0);},0));
+  document.getElementById('latest').innerHTML=table(sales.slice(0,10),false);
+  renderPotentialSummary();
+  renderPaymentSummary();
+  renderWeeklySummary();
+}
+function table(rows,actions){
+  if(!rows.length)return '<p class="muted">Nenhuma venda registrada.</p>';
+  return '<table><thead><tr><th>Data</th><th>Cliente</th><th>Produto/serviço</th><th>Qtd.</th><th>Venda</th><th>Frete</th><th>Total</th><th>Pagamento</th>'+(actions?'<th></th>':'')+'</tr></thead><tbody>'+
+    rows.map(function(s){
+      const pay=s.status_pagamento==='A receber' ? (s.data_vencimento?'A receber até '+new Date(s.data_vencimento+'T12:00:00').toLocaleDateString('pt-BR'):'A receber') : 'Pago';
+      return '<tr><td>'+new Date(s.data_venda+'T12:00:00').toLocaleDateString('pt-BR')+'</td><td>'+esc(s.cliente)+'</td><td>'+esc(s.produto)+'</td><td>'+s.quantidade+'</td><td>'+brl(calc(s))+'</td><td>'+brl(s.frete)+'</td><td><b>'+brl(paymentAmount(s))+'</b></td><td>'+pay+'</td>'+
+      (actions?'<td><button class="danger" onclick="delSale('+s.id+')">Excluir</button></td>':'')+'</tr>';
+    }).join('')+'</tbody></table>';
+}
+function paymentBadge(s){
+  if(s.status_pagamento!=='A receber')return 'Pago';
+  const today=iso(new Date());
+  if(s.data_vencimento && s.data_vencimento<today)return '<b style="color:#b42318">Atrasado</b>';
+  return '<span style="color:#9a6700">A receber</span>';
+}
+function renderPaymentSummary(){
+  const box0=document.getElementById('paymentAlerts');
+  let box=box0;
+  if(!box){
+    const dash=document.getElementById('dash');
+    const panel=document.createElement('div');
+    panel.className='panel';
+    panel.id='paymentPanel';
+    panel.innerHTML='<div class="row"><h2 style="margin:0">Pagamentos a receber</h2><button class="ghost" onclick="loadData()">Atualizar</button></div><div id="paymentAlerts" class="tablewrap" style="margin-top:12px"></div>';
+    dash.insertBefore(panel,dash.children[3]);
+    box=panel.querySelector('#paymentAlerts');
+  }
+  const today=iso(new Date());
+  const pending=sales.filter(function(s){return s.status_pagamento==='A receber';});
+  const late=pending.filter(function(s){return s.data_vencimento&&s.data_vencimento<today;});
+  document.getElementById('toReceive').textContent=brl(pending.reduce(function(a,s){return a+paymentAmount(s);},0));
+  document.getElementById('latePayments').textContent=late.length;
+  const rows=pending.filter(function(s){return s.data_vencimento;}).sort(function(a,b){return a.data_vencimento.localeCompare(b.data_vencimento);});
+  box.innerHTML=rows.length?'<table><thead><tr><th>Cliente</th><th>Valor</th><th>Vencimento</th><th>Situação</th><th></th></tr></thead><tbody>'+
+    rows.map(function(s){return '<tr><td>'+esc(s.cliente)+'</td><td>'+brl(paymentAmount(s))+'</td><td>'+new Date(s.data_vencimento+'T12:00:00').toLocaleDateString('pt-BR')+'</td><td>'+paymentBadge(s)+'</td><td><button class="ghost" onclick="markPaid('+s.id+')">Marcar pago</button></td></tr>';}).join('')+
+    '</tbody></table>':'<p class="muted">Nenhum pagamento pendente. 👍</p>';
+}
+async function markPaid(id){
+  const r=await sb.from('vendas').update({status_pagamento:'Pago',data_pagamento:iso(new Date())}).eq('id',id);
+  if(r.error){notice(r.error.message,'error');return;}
+  notice('Pagamento marcado como recebido.');
+  await loadData();
+}
+function renderWeeklySummary(){
+  const box=document.getElementById('weeklySummary');
+  if(!box)return;
+  const now=new Date();
+  const day=now.getDay();
+  const monday=new Date(now);
+  monday.setDate(now.getDate()-(day===0?6:day-1));
+  const current=iso(monday);
+  const weeks={};
+  sales.forEach(function(s){
+    const p=String(s.data_venda).split('-').map(Number);
+    if(p.length!==3)return;
+    const d=new Date(p[0],p[1]-1,p[2]);
+    const dow=d.getDay();
+    const mon=new Date(p[0],p[1]-1,p[2]-(dow===0?6:dow-1));
+    const key=iso(mon);
+    const sun=addDays(mon,6);
+    if(!weeks[key])weeks[key]={from:key,to:iso(sun),sales:0,freight:0,total:0,count:0};
+    weeks[key].sales+=calc(s);
+    weeks[key].freight+=Number(s.frete||0);
+    weeks[key].total+=paymentAmount(s);
+    weeks[key].count++;
+  });
+  if(!weeks[current]){
+    weeks[current]={from:current,to:iso(addDays(monday,6)),sales:0,freight:0,total:0,count:0};
+  }
+  const rows=Object.values(weeks).sort(function(a,b){return b.from.localeCompare(a.from);});
+  box.innerHTML='<table><thead><tr><th>Semana</th><th>Vendas</th><th>Fretes</th><th>Total</th><th>Lançamentos</th></tr></thead><tbody>'+
+    rows.map(function(w){return '<tr'+(w.from===current?' style="font-weight:700;background:#f7fbfd"':'')+'><td><b>'+new Date(w.from+'T12:00:00').toLocaleDateString('pt-BR')+' a '+new Date(w.to+'T12:00:00').toLocaleDateString('pt-BR')+'</b>'+(w.from===current?' <span class="muted">(semana atual)</span>':'')+'</td><td>'+brl(w.sales)+'</td><td>'+brl(w.freight)+'</td><td><b>'+brl(w.total)+'</b></td><td>'+w.count+'</td></tr>';}).join('')+
+    '</tbody></table>';
+}
+function renderHistory(){
+  const box=document.getElementById('historyTable');
+  if(box)box.innerHTML=table(sales,true);
+}
+function renderReports(){
+  const f=document.getElementById('rFrom');
+  const t=document.getElementById('rTo');
+  const out=document.getElementById('reportContent');
+  if(!f||!t||!out||!f.value||!t.value)return;
+  const rows=sales.filter(function(s){return s.data_venda>=f.value&&s.data_venda<=t.value;});
+  const venda=rows.reduce(function(a,s){return a+calc(s);},0);
+  const frete=rows.reduce(function(a,s){return a+Number(s.frete||0);},0);
+  const map={};
+  rows.forEach(function(s){map[s.produto]=(map[s.produto]||0)+Number(s.quantidade||0);});
+  const rank=Object.entries(map).sort(function(a,b){return b[1]-a[1];});
+  out.innerHTML='<div class="grid"><div class="card"><div class="label">Vendas</div><div class="value">'+brl(venda)+'</div></div><div class="card"><div class="label">Fretes</div><div class="value">'+brl(frete)+'</div></div><div class="card"><div class="label">Total recebido</div><div class="value">'+brl(venda+frete)+'</div></div><div class="card"><div class="label">Lançamentos</div><div class="value">'+rows.length+'</div></div></div>'+
+    '<div class="panel" style="margin-top:14px"><h3>Ranking de produtos/serviços por quantidade</h3>'+
+    (rank.length?'<table><thead><tr><th>Posição</th><th>Produto/serviço</th><th>Quantidade</th></tr></thead><tbody>'+rank.map(function(x,i){return '<tr><td>'+(i+1)+'</td><td>'+esc(x[0])+'</td><td>'+x[1]+'</td></tr>';}).join('')+'</tbody></table>':'<p class="muted">Sem vendas no período.</p>')+
+    '</div><div class="panel"><h3>Vendas do período</h3>'+table(rows,false)+'</div>';
+}
+function renderPotentialSummary(){
+  const today=iso(new Date());
+  const open=potentials.filter(function(p){return p.status!=='Fechado'&&p.status!=='Perdido';});
+  const due=potentials.filter(function(p){return p.status!=='Fechado'&&p.status!=='Perdido'&&p.proximo_contato===today;});
+  const late=potentials.filter(function(p){return p.status!=='Fechado'&&p.status!=='Perdido'&&p.proximo_contato&&p.proximo_contato<today;});
+  document.getElementById('openOppValue').textContent=brl(open.reduce(function(a,p){return a+Number(p.valor_orcamento||0);},0));
+  document.getElementById('openOppCount').textContent=open.length;
+  document.getElementById('todayFollowups').textContent=due.length;
+  document.getElementById('lateFollowups').textContent=late.length;
+  const box=document.getElementById('dashFollowups');
+  const rows=late.concat(due);
+  box.innerHTML=rows.length?'<table><thead><tr><th>Cliente</th><th>Valor</th><th>Follow-up</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+
+    rows.map(function(p){return '<tr><td>'+esc(p.cliente)+'</td><td>'+brl(p.valor_orcamento)+'</td><td>'+(p.proximo_contato<today?'Atrasado':'Hoje')+'</td><td>'+esc(p.status)+'</td><td>'+contactLinks(p)+'</td></tr>';}).join('')+
+    '</tbody></table>':'<p class="muted">Nenhum follow-up para hoje. 👍</p>';
+}
+function contactLinks(p){
+  const phone=(p.telefone||'').replace(/\D/g,'');
+  let html='';
+  if(phone)html+='<a href="https://wa.me/55'+phone+'?text='+encodeURIComponent('Olá! Tudo bem? Estou entrando em contato sobre o orçamento da SellaFlex.')+'" target="_blank"><button class="ghost">WhatsApp</button></a>';
+  if(p.email)html+='<a href="mailto:'+encodeURIComponent(p.email)+'"><button class="ghost">E-mail</button></a>';
+  return html;
+}
+function renderPotentials(){
+  const box=document.getElementById('potentialTable');
+  if(!box)return;
+  if(!potentials.length){box.innerHTML='<p class="muted">Nenhum cliente em potencial cadastrado.</p>';return;}
+  const today=iso(new Date());
+  box.innerHTML='<table><thead><tr><th>Cliente</th><th>Orçamento</th><th>Contato</th><th>Próximo follow-up</th><th>Status</th><th>Ações</th></tr></thead><tbody>'+
+    potentials.map(function(p){
+      const due=p.status!=='Fechado'&&p.status!=='Perdido'&&p.proximo_contato&&p.proximo_contato<=today;
+      const opts=['Orçamento enviado','Aguardando retorno','Em negociação','Fechado','Perdido'].map(function(x){return '<option '+(p.status===x?'selected':'')+'>'+x+'</option>';}).join('');
+      return '<tr><td><b>'+esc(p.cliente)+'</b><br><span class="muted">'+esc(p.observacoes||'')+'</span></td><td>'+brl(p.valor_orcamento)+'</td><td>'+esc(p.telefone||p.email||'-')+'</td><td>'+(p.proximo_contato?new Date(p.proximo_contato+'T12:00:00').toLocaleDateString('pt-BR'):'-')+(due?' <b style="color:#b42318">• atenção</b>':'')+'</td><td><select onchange="updatePotential('+p.id+',this.value)">'+opts+'</select></td><td><div style="display:flex;gap:6px;flex-wrap:wrap">'+contactLinks(p)+'<button class="ghost" onclick="markContacted('+p.id+')">Fiz contato</button><button class="primary" onclick="closeAsSale('+p.id+')">Fechar venda</button><button class="danger" onclick="markLost('+p.id+')">Perdido</button><button class="danger" onclick="deletePotential('+p.id+')">Excluir</button></div></td></tr>';
+    }).join('')+'</tbody></table>';
+}
+async function savePotential(){
+  const payload={
+    cliente:document.getElementById('pClient').value.trim(),
+    valor_orcamento:Number(document.getElementById('pValue').value||0),
+    telefone:document.getElementById('pPhone').value.trim(),
+    email:document.getElementById('pEmail').value.trim(),
+    data_orcamento:document.getElementById('pQuoteDate').value,
+    status:document.getElementById('pStatus').value,
+    proximo_contato:document.getElementById('pNext').value,
+    intervalo_followup:Number(document.getElementById('pInterval').value||3),
+    observacoes:document.getElementById('pObs').value.trim()
+  };
+  if(!payload.cliente||!payload.data_orcamento||!payload.proximo_contato){notice('Preencha cliente, data do orçamento e próximo follow-up.','error');return;}
+  const r=await sb.from('clientes_potenciais').insert(payload);
+  if(r.error){notice(r.error.message,'error');return;}
+  ['pClient','pPhone','pEmail','pObs'].forEach(function(id){document.getElementById(id).value='';});
+  document.getElementById('pValue').value=0;
+  document.getElementById('pStatus').value='Orçamento enviado';
+  document.getElementById('pQuoteDate').value=iso(new Date());
+  document.getElementById('pInterval').value=3;
+  document.getElementById('pNext').value=iso(addDays(new Date(),3));
+  notice('Cliente em potencial salvo.');
+  await loadPotentials();
+}
+async function updatePotential(id,status){
+  const r=await sb.from('clientes_potenciais').update({status:status,atualizado_em:new Date().toISOString()}).eq('id',id);
+  if(r.error){notice(r.error.message,'error');return;}
+  await loadPotentials();
+}
+async function markContacted(id){
+  const p=potentials.find(function(x){return x.id===id;});
+  if(!p)return;
+  const answer=prompt('Daqui a quantos dias você quer ser lembrado novamente?',String(p.intervalo_followup||3));
+  if(answer===null)return;
+  const days=Math.max(1,Number(answer)||3);
+  const today=new Date();
+  const next=addDays(today,days);
+  const r=await sb.from('clientes_potenciais').update({ultimo_contato:iso(today),proximo_contato:iso(next),intervalo_followup:days,ultimo_aviso_enviado:null,atualizado_em:new Date().toISOString()}).eq('id',id);
+  if(r.error){notice(r.error.message,'error');return;}
+  notice('Contato registrado. Próximo follow-up: '+next.toLocaleDateString('pt-BR'));
+  await loadPotentials();
+}
+async function markLost(id){
+  if(!confirm('Marcar este cliente como perdido?'))return;
+  await updatePotential(id,'Perdido');
+}
+async function deletePotential(id){
+  if(!confirm('Excluir este cliente em potencial?'))return;
+  const r=await sb.from('clientes_potenciais').delete().eq('id',id);
+  if(r.error){notice(r.error.message,'error');return;}
+  notice('Cliente em potencial excluído.');
+  await loadPotentials();
+}
+function closeAsSale(id){
+  const p=potentials.find(function(x){return x.id===id;});
+  if(!p)return;
+  document.getElementById('fClient').value=p.cliente;
+  document.getElementById('fUnit').value=Number(p.valor_orcamento||0);
+  document.getElementById('fQty').value=1;
+  showTab('new');
+  updateTotal();
+  notice('Venda pré-preenchida com o cliente e o valor do orçamento.');
+}
+function updateTotal(){
+  const q=Number(document.getElementById('fQty').value||0);
+  const u=Number(document.getElementById('fUnit').value||0);
+  const d=Number(document.getElementById('fDisc').value||0);
+  const f=Number(document.getElementById('fFrete').value||0);
+  document.getElementById('fTotal').textContent=brl(q*u-d+f);
+}
+function toggleDueDate(){
+  const status=document.getElementById('fPayStatus');
+  const wrap=document.getElementById('dueWrap');
+  if(!status||!wrap)return;
+  const pending=status.value==='A receber';
+  wrap.classList.toggle('hidden',!pending);
+  if(pending&&!document.getElementById('fDueDate').value)document.getElementById('fDueDate').value=iso(addDays(new Date(),7));
+}
+async function saveSale(){
+  const pending=document.getElementById('fPayStatus').value==='A receber';
+  const payload={
+    data_venda:document.getElementById('fDate').value,
+    cliente:document.getElementById('fClient').value.trim(),
+    produto:document.getElementById('fProduct').value.trim(),
+    categoria:document.getElementById('fCat').value,
+    quantidade:Number(document.getElementById('fQty').value),
+    valor_unitario:Number(document.getElementById('fUnit').value),
+    desconto:Number(document.getElementById('fDisc').value||0),
+    frete:Number(document.getElementById('fFrete').value||0),
+    forma_pagamento:document.getElementById('fPay').value,
+    observacoes:document.getElementById('fObs').value.trim(),
+    status_pagamento:pending?'A receber':'Pago',
+    data_vencimento:pending?document.getElementById('fDueDate').value:null,
+    data_pagamento:pending?null:document.getElementById('fDate').value
+  };
+  if(!payload.data_venda||!payload.cliente||!payload.produto||payload.quantidade<=0||payload.valor_unitario<0){notice('Preencha data, cliente, produto, quantidade e valor.','error');return;}
+  if(pending&&!payload.data_vencimento){notice('Informe a data de vencimento.','error');return;}
+  const r=await sb.from('vendas').insert(payload);
+  if(r.error){notice(r.error.message,'error');return;}
+  document.getElementById('fClient').value='';
+  document.getElementById('fProduct').value='';
+  document.getElementById('fQty').value=1;
+  document.getElementById('fUnit').value=0;
+  document.getElementById('fDisc').value=0;
+  document.getElementById('fFrete').value=0;
+  document.getElementById('fObs').value='';
+  document.getElementById('fPayStatus').value='Pago';
+  document.getElementById('fDueDate').value='';
+  toggleDueDate();
+  updateTotal();
+  notice('Venda salva com sucesso.');
+  await loadData();
+  showTab('dash');
+}
+async function delSale(id){
+  if(!confirm('Excluir esta venda?'))return;
+  const r=await sb.from('vendas').delete().eq('id',id);
+  if(r.error){notice(r.error.message,'error');return;}
+  notice('Venda excluída.');
+  await loadData();
+}
+function boot(){
+  try{
+    if(!window.supabase){notice('Não foi possível carregar o sistema de dados. Atualize a página.','error');return;}
+    sb=window.supabase.createClient('https://igeqpeswqnudswnpshsb.supabase.co','sb_publishable_zJXa_3-VPZw_Y9JbGmTQ7A_0qxFUmzV');
+    startDates();
+    ['fQty','fUnit','fDisc','fFrete'].forEach(function(id){const el=document.getElementById(id);if(el)el.addEventListener('input',updateTotal);});
+    const pay=document.getElementById('fPayStatus');
+    if(pay)pay.addEventListener('change',toggleDueDate);
+    updateTotal();
+    loadData();
+    loadPotentials();
+  }catch(e){
+    console.error(e);
+    notice('Erro ao carregar o sistema. Atualize a página.','error');
+  }
+}
+document.addEventListener('DOMContentLoaded',boot);
 </script></body></html>
