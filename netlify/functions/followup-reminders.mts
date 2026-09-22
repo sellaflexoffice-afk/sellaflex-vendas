@@ -1,3 +1,4 @@
+// Daily SellaFlex reminder function.
 export default async () => {
   const supabaseUrl = Netlify.env.get("SUPABASE_URL");
   const supabaseKey = Netlify.env.get("SUPABASE_PUBLISHABLE_KEY");
