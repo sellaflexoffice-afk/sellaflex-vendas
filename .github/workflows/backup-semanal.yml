@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Instalar cliente PostgreSQL compatível
+      - name: Instalar cliente PostgreSQL 17
         run: |
           sudo apt-get update
           sudo apt-get install -y ca-certificates curl
@@ -23,6 +23,7 @@ jobs:
           echo "deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo "$VERSION_CODENAME")-pgdg main" | sudo tee /etc/apt/sources.list.d/pgdg.list
           sudo apt-get update
           sudo apt-get install -y postgresql-client-17
+          /usr/lib/postgresql/17/bin/pg_dump --version
 
       - name: Exportar banco e tabelas
         env:
@@ -38,11 +39,10 @@ jobs:
           mkdir -p backup
           DATA="$(date -u +%Y-%m-%d)"
 
-          pg_dump --version
-          pg_dump "$SUPABASE_DB_URL" --schema=public --no-owner --no-privileges --format=plain | gzip -9 > "backup/Sellaflex_Banco_${DATA}.sql.gz"
+          /usr/lib/postgresql/17/bin/pg_dump "$SUPABASE_DB_URL" --schema=public --no-owner --no-privileges --format=plain | gzip -9 > "backup/Sellaflex_Banco_${DATA}.sql.gz"
 
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "\\copy (select * from public.vendas order by id) to 'backup/Vendas_${DATA}.csv' csv header"
-          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "\\copy (select * from public.clientes_potenciais order by id) to 'backup/Clientes_Potenciais_${DATA}.csv' csv header"
+          /usr/lib/postgresql/17/bin/psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "\\copy (select * from public.vendas order by id) to 'backup/Vendas_${DATA}.csv' csv header"
+          /usr/lib/postgresql/17/bin/psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "\\copy (select * from public.clientes_potenciais order by id) to 'backup/Clientes_Potenciais_${DATA}.csv' csv header"
 
           test -s "backup/Sellaflex_Banco_${DATA}.sql.gz"
           test -s "backup/Vendas_${DATA}.csv"
