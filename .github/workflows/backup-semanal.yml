@@ -47,7 +47,6 @@ jobs:
       - name: Enviar backup por e-mail
         env:
           BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
-          DATA_BACKUP: ${{ env.DATA_BACKUP }}
         run: |
           set -euo pipefail
           python3 - <<'PY'
@@ -103,6 +102,6 @@ jobs:
       - name: Guardar cópia temporária do backup na execução
         uses: actions/upload-artifact@v4
         with:
-          name: sellaflex-backup-${{ env.DATA_BACKUP }}
+          name: sellaflex-backup-${{ github.run_id }}
           path: backup/
           retention-days: 30
