@@ -1,0 +1,108 @@
+name: Backup semanal Sellaflex
+
+on:
+  schedule:
+    # Domingo às 09:00 no horário de Recife (12:00 UTC)
+    - cron: "0 12 * * 0"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Instalar ferramentas PostgreSQL
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y postgresql-client
+
+      - name: Exportar banco e tabelas para recuperação/consulta
+        env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_DB_URL:-}" ]; then
+            echo "Falta configurar o segredo SUPABASE_DB_URL no GitHub."
+            exit 1
+          fi
+
+          mkdir -p backup
+          DATA="$(date -u +%Y-%m-%d)"
+
+          # Dump SQL do schema public, comprimido para reduzir o tamanho.
+          pg_dump "$SUPABASE_DB_URL" --schema=public --no-owner --no-privileges --format=plain | gzip -9 > "backup/Sellaflex_Banco_${DATA}.sql.gz"
+
+          # CSVs legíveis para consulta rápida ou importação manual.
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "\\copy (select * from public.vendas order by id) to 'backup/Vendas_${DATA}.csv' csv header"
+          psql "$SUPABASE_DB_URL" -v ON_ERROR_STOP=1 -c "\\copy (select * from public.clientes_potenciais order by id) to 'backup/Clientes_Potenciais_${DATA}.csv' csv header"
+
+          test -s "backup/Sellaflex_Banco_${DATA}.sql.gz"
+          test -s "backup/Vendas_${DATA}.csv"
+          test -s "backup/Clientes_Potenciais_${DATA}.csv"
+          echo "DATA_BACKUP=${DATA}" >> "$GITHUB_ENV"
+
+      - name: Enviar backup por e-mail
+        env:
+          BREVO_API_KEY: ${{ secrets.BREVO_API_KEY }}
+          DATA_BACKUP: ${{ env.DATA_BACKUP }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import base64, json, os, pathlib, urllib.request, urllib.error
+
+          api_key = os.environ.get("BREVO_API_KEY", "")
+          if not api_key:
+              raise SystemExit("Falta configurar o segredo BREVO_API_KEY no GitHub.")
+
+          data = os.environ["DATA_BACKUP"]
+          files = [
+              pathlib.Path(f"backup/Sellaflex_Banco_{data}.sql.gz"),
+              pathlib.Path(f"backup/Vendas_{data}.csv"),
+              pathlib.Path(f"backup/Clientes_Potenciais_{data}.csv"),
+          ]
+          attachments = [
+              {
+                  "name": path.name,
+                  "content": base64.b64encode(path.read_bytes()).decode("ascii"),
+              }
+              for path in files
+          ]
+          payload = {
+              "sender": {"name": "Sellaflex Backup", "email": "sellaflexoffice@gmail.com"},
+              "to": [{"email": "sellaflexoffice@gmail.com", "name": "Sellaflex"}],
+              "subject": f"Backup semanal Sellaflex — {data}",
+              "textContent": (
+                  "Backup automático semanal do sistema Sellaflex Vendas.\\n\\n"
+                  "Anexos: banco SQL comprimido para recuperação e CSVs de vendas e clientes potenciais.\\n"
+                  "Guarde os arquivos em local seguro. O arquivo SQL contém dados comerciais."
+              ),
+              "attachment": attachments,
+          }
+          request = urllib.request.Request(
+              "https://api.brevo.com/v3/smtp/email",
+              data=json.dumps(payload).encode("utf-8"),
+              headers={
+                  "accept": "application/json",
+                  "api-key": api_key,
+                  "content-type": "application/json",
+              },
+              method="POST",
+          )
+          try:
+              with urllib.request.urlopen(request, timeout=60) as response:
+                  print(f"Brevo aceitou o e-mail (HTTP {response.status}).")
+          except urllib.error.HTTPError as exc:
+              print(f"Falha no envio ao Brevo: HTTP {exc.code}")
+              print(exc.read().decode("utf-8", errors="replace"))
+              raise
+          PY
+
+      - name: Guardar cópia temporária do backup na execução
+        uses: actions/upload-artifact@v4
+        with:
+          name: sellaflex-backup-${{ env.DATA_BACKUP }}
+          path: backup/
+          retention-days: 30
